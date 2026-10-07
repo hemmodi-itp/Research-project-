@@ -1,0 +1,40 @@
+# Fast end-to-end run on synthetic data (CPU, no downloads). Inherits everything else from default.yaml.
+# Results from this config are meaningless: it only checks that the pipeline runs.
+base: default.yaml
+name: smoke
+output_dir: outputs/smoke
+seeds: [0, 1]
+
+data:
+  cohort_csv: data/synthetic/cohort.csv
+  image_root: data/synthetic
+  image_size: 64
+  max_text_tokens: 24
+
+model:
+  image_backbone: resnet18
+  image_pretrained: false
+  image_grid: 2                 # 64 px input -> 2 x 2 final map
+  text_encoder: simple
+  d_model: 64
+
+train:
+  batch_size: 32
+  max_epochs: 3
+  patience: 2
+  lr_encoders: 3.0e-4           # encoders are not pretrained here, so they need a larger step
+  lr_fusion: 1.0e-3
+  num_workers: 0
+
+xgboost:
+  n_estimators: 300
+
+eval:
+  n_bootstrap: 200
+
+explain:
+  n_cases: 6
+  ig_steps: 16
+  shap_background: 10
+  shap_permutations: 4
+  deletion_steps: 5

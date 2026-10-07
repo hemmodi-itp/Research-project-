@@ -1,0 +1,78 @@
+# Full protocol from the paper (Sections 3.1-3.4, Table 3). One file regenerates every number.
+name: mimic_pneumonia
+output_dir: outputs/mimic_pneumonia
+seeds: [0, 1, 2, 3, 4]          # five random seeds (Sec. 3.4)
+primary_seed: 0                 # seed used for CIs and hypothesis tests; others give seed-to-seed SD
+split_seed: 2026                # fixed patient partition shared by every model and seed
+
+data:
+  cohort_csv: data/cohort.csv           # produced by scripts/build_cohort.py
+  image_root: /path/to/physionet.org/files/mimic-cxr-jpg/2.1.0
+  label_col: label                      # ICD-based label; set to label_report for the sensitivity analysis
+  split: {train: 0.70, val: 0.15, test: 0.15}
+  image_size: 384
+  max_text_tokens: 64
+  numeric_features: [age, temperature, heartrate, resprate, o2sat, sbp, dbp, pain,
+                     wbc, hemoglobin, platelets, creatinine, bun, sodium, potassium,
+                     bicarbonate, glucose, lactate, crp]
+  categorical_features: [sex, acuity, hx_copd, hx_chf, hx_diabetes, hx_ckd, hx_asthma, hx_pneumonia]
+  winsor_quantiles: [0.01, 0.99]
+  # Range checks: values outside these limits are treated as missing before winsorising.
+  valid_ranges:
+    age: [18, 110]
+    temperature: [85, 110]      # Fahrenheit, as recorded in MIMIC-IV-ED triage
+    heartrate: [20, 250]
+    resprate: [4, 70]
+    o2sat: [50, 100]
+    sbp: [40, 300]
+    dbp: [20, 200]
+    pain: [0, 10]
+
+model:
+  image_backbone: resnet50
+  image_pretrained: true
+  image_grid: 6                 # final feature map pooled to 6 x 6 = 36 region tokens
+  text_encoder: emilyalsentzer/Bio_ClinicalBERT   # "simple" = small word-level encoder for offline tests
+  d_model: 256
+  fusion_layers: 2
+  fusion_heads: 4
+  dropout: 0.1
+  modality_dropout: 0.3
+  aux_weight: 0.1               # lambda in Eq. 7
+
+train:
+  batch_size: 32
+  max_epochs: 30
+  patience: 5
+  lr_encoders: 1.0e-5           # pretrained image / text encoders
+  lr_fusion: 1.0e-4             # everything initialised from scratch
+  weight_decay: 0.01
+  grad_clip: 1.0
+  num_workers: 4
+  device: auto                  # auto | cpu | cuda
+  amp: true                     # mixed precision on CUDA only
+  calibration: temperature      # temperature (paper) | platt (adds a bias term; see README)
+  threshold_rule: youden        # youden | sensitivity
+  target_sensitivity: 0.80      # used when threshold_rule = sensitivity
+
+xgboost:
+  n_estimators: 2000
+  learning_rate: 0.03
+  max_depth: 4
+  subsample: 0.8
+  colsample_bytree: 0.8
+  early_stopping_rounds: 100
+
+eval:
+  n_bootstrap: 2000
+  alpha: 0.05
+  ece_bins: 15
+  uncertainty_margin: 0.05      # |p - threshold| below this is flagged for review
+  age_bins: [18, 45, 65, 200]   # 18-44, 45-64, 65+
+
+explain:
+  n_cases: 20                   # cases exported for clinician plausibility rating
+  ig_steps: 50
+  shap_background: 30
+  shap_permutations: 8
+  deletion_steps: 10
